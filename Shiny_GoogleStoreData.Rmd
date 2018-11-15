@@ -1,0 +1,199 @@
+---
+title: "Shiny_GoogleStoreData"
+output: html_document
+---
+
+```{r shiny App}
+
+library(Hmisc)
+library(dplyr)
+library(readr)
+library(shiny)
+library(ggplot2)
+library(plotly)
+library(lubridate)
+library(stringr)
+library(data.table)
+
+
+
+Data2<-fread("train_cleaned.csv")
+Data2<-Data2%>% filter(continent!="(not set)")
+Data2<-Data2%>%filter(operatingSystem!="(not set)")
+Data2<-Data2%>%filter(medium!="(not set)")
+Data2<-Data2%>%filter(medium!="(none)")
+colnames(Data2)
+
+
+length(unique(Data2$operatingSystem)) #20
+length(unique(Data2$country)) #222
+length(unique(Data2$medium)) #5 after removing null and not set values
+length(unique(Data2$deviceCategory)) #3
+length(unique(Data2$browser)) #54
+length(unique(Data2$source)) #380
+length(unique(Data2$channelGrouping)) #6
+
+unique(Data2$medium)
+unique(Data2$channelGrouping)
+
+Data2$Visitdate<-as.data.frame(str_split_fixed(Data2$visitStartTime, " ", 2))[[1]] #splitting the visit time column and pulling Date to Visit Date column 
+Data2$VisitTime<-as.data.frame(str_split_fixed(Data2$visitStartTime, " ", 2))[[2]] #splitting the visit time column and pulling Time to Visit Time.
+class(Data2$Visitdate)
+class(Data2$VisitTime)
+
+Data2$Visitdate<- parse_date_time(Data2$Visitdate, order=c('mdy'))
+class(Data2$Visitdate) #Factor
+
+Data2$VisitTime <-hm(Data2$VisitTime)
+class(Data2$VisitTime)
+
+Data<-Data2[order(Data2$VisitTime),]
+
+Data$VisitHour<-as.data.frame(str_split_fixed(Data$VisitTime, "H", 2))[[1]]
+class(Data$VisitHour)
+Data<-within(Data, rm(VisitTime))
+
+Data$HourMissing<-str_detect(Data$VisitHour,pattern = "M")
+
+
+#Data2<-within(Data2, rm(VisitTime))
+Data<-Data%>% filter(HourMissing==FALSE)
+Data<-within(Data, rm(HourMissing))
+class(Data$VisitHour)
+Data$VisitHour<-as.character(Data$VisitHour) #Changing the type of the hour column for a clean visual in drop down 
+class(Data$VisitHour) 
+
+Data$VisitHour<-str_replace(Data$VisitHour,pattern="0S",replacement = "0") #Replacing the 0 Hour i.e., 12 am
+
+
+
+#write.csv(Data, file = "Train_Data_final.csv")
+
+
+#Data<-fread("Train_Data_final.csv")
+
+##UI Framework
+ui <- fluidPage(
+        sidebarLayout(# to get side panel  
+                sidebarPanel(
+                        tabsetPanel(
+                                tabPanel("Search Engine Usage_Hourly Basis",radioButtons("rb", "Select Device", choices = unique(Data$deviceCategory), selected = unique(Data$deviceCategory)[1],inline = FALSE),
+                                selectInput("si","Select Continent",choices = unique(Data$continent)),
+                                selectInput("si1","Select Browser Type",choices = unique(Data$browser)),
+                                selectInput("si2","Select Hour",choices = unique(Data$VisitHour))
+                                         )
+                                
+                        )
+                        
+                ),
+                mainPanel(# to get main panel and multiple set of panels in main panel
+                        tabsetPanel(
+                                tabPanel("Graphical Representation for Channel Grouping",
+                                         h2("Channel of Search Used"),
+                                        plotlyOutput("bar")
+                                         ),
+                                tabPanel("Graphical Representation for OS",
+                                        h2("The OS Used"),
+                                        plotlyOutput("bar1")
+                                        ),
+                                tabPanel("Data Table",
+                                         h2("Data Table"),dataTableOutput(outputId = "table")
+                                        ),
+                                tabPanel("Read Me", h2(textOutput("Text1")),h3(textOutput("Text2")),h5(textOutput("Text3")),h5(textOutput("Text4")),
+                                         h5(textOutput("Text5")),h5(textOutput("Text6")),textOutput("Text7"),h3(textOutput("Text8")),
+                                         h5(textOutput("Text9"))
+                                        )
+                                
+                        )
+                        
+                )
+        )
+        
+  
+)
+
+server <- function(input, output, session) {
+   filtered_data <- reactive({filter(Data, deviceCategory == input$rb, continent == input$si,browser==input$si1,VisitHour==input$si2)})
+        # observe({
+        #         updateSelectInput(session,"si", choices = unique(filtered_data()$continent))
+        #         })
+        # filtered_data_2 <- reactive({filter(filtered_data(), continent == input$si, browser==input$si1 ,VisitHour <= input$sl)})
+        output$bar <- renderPlotly(
+                {
+                        p <- ggplot(filtered_data(), aes(x =channelGrouping, fill=operatingSystem))+geom_bar(stat = "count")+
+                                theme_bw()
+                        ggplotly(p)   #connecting to the server and displaying the bar graph in UI 
+                }
+        )
+        output$bar1<-renderPlotly(
+               {
+                        q<-ggplot(filtered_data(),aes(x=operatingSystem, fill=operatingSystem))+geom_bar(stat = "count")+
+                                theme_bw()
+                        ggplotly(q)
+               }
+        )
+        
+        output$table <- renderDataTable(
+                {
+                        select(filtered_data(),c("channelGrouping","date","country","visits"))
+                }
+                )# Connecting the datatable to the server and displaying in the UI
+        output$Text1<-renderText({
+          "Shiny App for Google Merchandise Store"
+        }# displaying the text under readme tab
+          
+        )
+        output$Text2<-renderText({
+          "# The first tab explains about the channel grouping and below are its insights :"
+          
+        }# displaying the text under readme tab
+          
+        )
+        output$Text3<-renderText({
+          "-> Highly used channel searches for American Continents are Organic & Referral while for Asian Continent are Organic & Social"
+          
+        }# displaying the text under readme tab
+          
+        )
+        output$Text4<-renderText({
+          "-> Among all the continents the lowest usage of Google Merchandise Store is by African Continent"
+          
+        }# displaying the text under readme tab
+          
+        )
+        output$Text5<-renderText({
+          "-> High visits to Google Merchandise Store are via Desktops and lowest are via Tablets"
+          
+        }# displaying the text under readme tab
+          
+        )
+        output$Text6<-renderText({
+          "-> Visits to Google Merchandise Store via desktops by using chrome browser in American Continents is high around 5 pm and in Asian they is high around 7 am"
+          
+        }# displaying the text under readme tab
+          
+        )
+        output$Text7<-renderText({
+          "    "
+          
+        }# displaying the text under readme tab
+          
+        )
+        output$Text8<-renderText({
+          "# The second tab explains about the Operating Systems used and below are its insights :"
+          
+        }# displaying the text under readme tab
+          
+        )
+        output$Text9<-renderText({
+          "-> For American Continents the highly used OS are Macintosh and Windows while for Asia and Europe the highly used OS is Windows "
+          
+        }# displaying the text under readme tab
+          
+        )
+}
+
+shinyApp(ui, server)#Connecting the UI and Server.
+
+```
+

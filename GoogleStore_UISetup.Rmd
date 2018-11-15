@@ -1,0 +1,126 @@
+---
+title: "Google_Store"
+output: html_document
+---
+
+```{r UI Setup}
+
+library(Hmisc)
+library(dplyr)
+library(readr)
+library(shiny)
+library(ggplot2)
+library(plotly)
+library(lubridate)
+library(stringr)
+library(data.table)
+
+
+
+Data2<-fread("train_cleaned.csv")
+Data2<-Data2%>% filter(continent!="(not set)")
+Data2<-Data2%>%filter(operatingSystem!="(not set)")
+Data2<-Data2%>%filter(medium!="(not set)")
+Data2<-Data2%>%filter(medium!="(none)")
+colnames(Data2)
+
+
+length(unique(Data2$operatingSystem)) #20
+length(unique(Data2$country)) #222
+length(unique(Data2$medium)) #5 after removing null and not set values
+length(unique(Data2$deviceCategory)) #3
+length(unique(Data2$browser)) #54
+length(unique(Data2$source)) #380
+length(unique(Data2$channelGrouping)) #6
+
+unique(Data2$medium)
+unique(Data2$channelGrouping)
+
+Data2$Visitdate<-as.data.frame(str_split_fixed(Data2$visitStartTime, " ", 2))[[1]] #splitting the visit time column and pulling Date to Visit Date column 
+Data2$VisitTime<-as.data.frame(str_split_fixed(Data2$visitStartTime, " ", 2))[[2]] #splitting the visit time column and pulling Time to Visit Time.
+class(Data2$Visitdate)
+class(Data2$VisitTime)
+
+Data2$Visitdate<- parse_date_time(Data2$Visitdate, order=c('mdy'))
+class(Data2$Visitdate)
+
+Data2$VisitTime <-hm(Data2$VisitTime)
+class(Data2$VisitTime)
+
+Data<-Data2[order(Data2$VisitTime),]
+
+Data$VisitHour<-as.data.frame(str_split_fixed(Data$VisitTime, "H", 2))[[1]]
+class(Data$VisitHour)
+Data<-within(Data, rm(VisitTime))
+
+Data$HourMissing<-str_detect(Data$VisitHour,pattern = "M")
+
+
+#Data2<-within(Data2, rm(VisitTime))
+Data<-Data%>% filter(HourMissing==FALSE)
+Data<-within(Data, rm(HourMissing))
+class(Data$VisitHour)
+Data$VisitHour<-as.character(Data$VisitHour)
+class(Data$VisitHour)
+
+Data$VisitHour<-str_replace(Data$VisitHour,pattern="0S",replacement = "0")
+
+##Data2<-Data2%>%filter(VisitHour!="0S")
+##length(unique(Data2$VisitHour))
+##class(Data2$VisitHour)
+#Data2$VisitHour<-as.integer(Data2$VisitHour)
+#class(Data2$VisitHour)
+##Data2$VisitTimeHour <-hour(Data2$VisitTimeHour)
+
+
+
+write.csv(Data, file = "Train_Data_final.csv")
+
+
+#Data<-fread("Train_Data_final.csv")
+
+##UI Framework
+ui <- fluidPage(
+        sidebarLayout(
+                sidebarPanel(
+                        tabsetPanel(
+                                tabPanel("Search Engine Usage_Hourly Basis",radioButtons("rb", "Select Device", choices = unique(Data$deviceCategory), selected = unique(Data$deviceCategory)[1],inline = FALSE),
+                                selectInput("si","Select Continent",choices = unique(Data$continent)),
+                                selectInput("si1","Select Browser Type",choices = unique(Data$browser)),
+                                selectInput("si2","Select Hour",choices = unique(Data$VisitHour))
+                                         )
+                                
+                        )
+                        
+                ),
+                mainPanel(
+                        tabsetPanel(
+                                tabPanel("Graphical Representation for Channel Grouping",
+                                         h2("Channel of Search Used"),
+                                        plotlyOutput("bar")
+                                         ),
+                                tabPanel("Graphical Representation for OS",
+                                        h2("The OS Used"),
+                                        plotlyOutput("bar1")
+                                        ),
+                                tabPanel("Data Table",
+                                         h2("Data Table"),dataTableOutput(outputId = "table")
+                                        ),
+                                tabPanel("Read Me", h2(textOutput("Text1"))
+                                        )
+                                
+                        )
+                        
+                )
+        )
+        
+  
+)
+
+server <- function(input, output, session) {
+  
+}
+
+shinyApp(ui, server)
+```
+
